@@ -1,0 +1,237 @@
+openapi: 3.0.3
+info:
+  title: GroundTruth RAG API
+  description: API specification for the GroundTruth Retrieval-Augmented Generation application.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Development Server
+
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          tokenUrl: /login/access-token
+          scopes: {}
+
+  schemas:
+    Token:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+      required:
+        - access_token
+        - token_type
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, indexed, failed]
+        created_at:
+          type: string
+          format: date-time
+        preview_url:
+          type: string
+          description: URL to view the file (if supported)
+
+    ChatSession:
+      type: object
+      properties:
+        session_id:
+          type: integer
+        message:
+          type: string
+          description: A hint message or title for the session
+
+    AnalyticsStats:
+      type: object
+      properties:
+        total_documents:
+          type: integer
+        total_chats:
+          type: integer
+        storage_used_mb:
+          type: number
+          format: float
+        system_status:
+          type: string
+
+security:
+  - OAuth2PasswordBearer: []
+
+paths:
+  /login/access-token:
+    post:
+      tags:
+        - Auth
+      summary: OAuth2 Login
+      description: Login to get an access token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  description: Email address
+                password:
+                  type: string
+                  format: password
+              required:
+                - username
+                - password
+      responses:
+        '200':
+          description: Successful Login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+
+  /documents/upload:
+    post:
+      tags:
+        - Documents
+      summary: Upload Document
+      description: Upload a file (PDF, DOCX, TXT, MD) for ingestion.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Upload Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  filename:
+                    type: string
+                  status:
+                    type: string
+
+  /documents/:
+    get:
+      tags:
+        - Documents
+      summary: List Documents
+      description: Retrieve all documents uploaded by the user.
+      responses:
+        '200':
+          description: List of Documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Document'
+
+  /documents/{doc_id}:
+    delete:
+      tags:
+        - Documents
+      summary: Delete Document
+      description: Permanently remove a document and its embeddings.
+      parameters:
+        - in: path
+          name: doc_id
+          schema:
+            type: integer
+          required: true
+          description: ID of the document to delete
+      responses:
+        '200':
+          description: Deletion Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  id:
+                    type: integer
+
+  /chat/message:
+    post:
+      tags:
+        - Chat
+      summary: Send Message
+      description: |
+        Send a message and receive a streaming response (Server-Sent Events / Raw Stream).
+        The stream generally starts with a JSON metadata chunk referencing sources, followed by text tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                session_id:
+                  type: integer
+                  nullable: true
+              required:
+                - message
+      responses:
+        '200':
+          description: Streaming Response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Stream of event data (tokens)
+
+  /chat/sessions:
+    get:
+      tags:
+        - Chat
+      summary: List Sessions
+      description: Get a history of chat sessions for the user.
+      responses:
+        '200':
+          description: List of Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatSession'
+
+  /analytics/stats:
+    get:
+      tags:
+        - Analytics
+      summary: Get System Stats
+      description: Retrieve dashboard metrics (doc count, usage, status).
+      responses:
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsStats'
